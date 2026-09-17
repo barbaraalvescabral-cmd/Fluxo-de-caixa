@@ -1,0 +1,17 @@
+{
+  "name": "Meu fluxo de caixa",
+  "short_name": "Fluxo de caixa",
+  "start_url": "./index.html",
+  "display": "standalone",
+  "background_color": "#FBF0F2",
+  "theme_color": "#FBF0F2",
+  "description": "Controle pessoal de entradas, saidas e investimentos",
+  "icons": [
+    {
+      "src": "icone.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ]
+}

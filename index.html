@@ -1,0 +1,763 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="theme-color" content="#FBF0F2">
+<link rel="manifest" href="manifest.json">
+<title>Meu fluxo de caixa</title>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<style>
+  :root{
+    --bg:#FBEFF3;
+    --surface:#FFFFFF;
+    --border:#F0D6E0;
+    --ink:#5C2A44;
+    --ink-soft:#9C7186;
+    --gold:#C9698D;
+    --income:#D6487A;
+    --income-bg:#FBE3EC;
+    --expense:#8B3A5E;
+    --expense-bg:#F2DCE6;
+    --invest:#7A4C7E;
+    --invest-bg:#ECE0EC;
+  }
+  *{box-sizing:border-box;}
+  body{
+    margin:0;
+    background:var(--bg);
+    color:var(--ink);
+    font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
+    line-height:1.4;
+  }
+  #app{
+    max-width:900px;
+    margin:0 auto;
+    padding:28px 20px 60px;
+  }
+
+  /* Header */
+  .masthead{
+    display:flex;
+    align-items:baseline;
+    justify-content:space-between;
+    border-bottom:2px solid var(--ink);
+    padding-bottom:14px;
+    margin-bottom:22px;
+    flex-wrap:wrap;
+    gap:10px;
+  }
+  .masthead h1{
+    font-family: Georgia, "Times New Roman", serif;
+    font-size:30px;
+    font-weight:normal;
+    margin:0;
+    letter-spacing:0.2px;
+  }
+  .month-nav{
+    display:flex;
+    align-items:center;
+    gap:10px;
+    font-family: Georgia, serif;
+    font-size:17px;
+  }
+  .month-nav button{
+    background:none;
+    border:1px solid var(--ink);
+    color:var(--ink);
+    width:28px;
+    height:28px;
+    border-radius:50%;
+    cursor:pointer;
+    font-size:14px;
+    line-height:1;
+  }
+  .month-nav button:hover{ background:var(--ink); color:var(--bg); }
+  .month-label{ min-width:150px; text-align:center; text-transform:capitalize; }
+
+  /* Summary strip */
+  .summary{
+    display:grid;
+    grid-template-columns:repeat(auto-fit, minmax(160px, 1fr));
+    gap:14px;
+    margin-bottom:26px;
+  }
+  .stat{
+    background:var(--surface);
+    border:1px solid var(--border);
+    border-radius:6px;
+    padding:14px 16px;
+  }
+  .stat .label{ font-size:13px; color:var(--ink-soft); margin-bottom:6px; }
+  .stat .value{ font-family:Georgia, serif; font-size:24px; font-variant-numeric:tabular-nums; }
+  .stat.income .value{ color:var(--income); }
+  .stat.expense .value{ color:var(--expense); }
+  .stat.balance .value{ font-weight:bold; }
+  .stat.invest .value{ color:var(--invest); }
+  .stat .sub{ font-size:11px; color:var(--ink-soft); margin-top:4px; }
+
+  /* Layout */
+  .layout{
+    display:grid;
+    grid-template-columns: 300px 1fr;
+    gap:20px;
+  }
+  @media (max-width:680px){
+    .layout{ grid-template-columns:1fr; }
+  }
+
+  .panel{
+    background:var(--surface);
+    border:1px solid var(--border);
+    border-radius:6px;
+    padding:18px;
+  }
+  .panel h2{
+    font-family:Georgia, serif;
+    font-size:16px;
+    font-weight:normal;
+    margin:0 0 14px;
+    padding-bottom:8px;
+    border-bottom:1px solid var(--border);
+  }
+
+  /* Tabs */
+  .tabs{
+    display:flex;
+    gap:18px;
+    border-bottom:1px solid var(--border);
+    margin-bottom:16px;
+  }
+  .tab-btn{
+    background:none;
+    border:none;
+    padding:6px 2px 10px;
+    font-size:14px;
+    color:var(--ink-soft);
+    cursor:pointer;
+    border-bottom:2px solid transparent;
+    margin-bottom:-1px;
+  }
+  .tab-btn.active{
+    color:var(--ink);
+    border-bottom-color:var(--income);
+    font-weight:600;
+  }
+
+  /* Form */
+  .field{ margin-bottom:12px; }
+  .field label{ display:block; font-size:12px; color:var(--ink-soft); margin-bottom:4px; }
+  .field input, .field select{
+    width:100%;
+    padding:8px 9px;
+    border:1px solid var(--border);
+    border-radius:4px;
+    font-size:14px;
+    font-family:inherit;
+    color:var(--ink);
+    background:#fff;
+  }
+  .toggle{
+    display:flex;
+    border:1px solid var(--border);
+    border-radius:4px;
+    overflow:hidden;
+    margin-bottom:14px;
+  }
+  .toggle button{
+    flex:1;
+    padding:8px;
+    border:none;
+    background:#fff;
+    cursor:pointer;
+    font-size:13px;
+    color:var(--ink-soft);
+  }
+  .toggle button.active.type-income{ background:var(--income-bg); color:var(--income); font-weight:600; }
+  .toggle button.active.type-expense{ background:var(--expense-bg); color:var(--expense); font-weight:600; }
+
+  .add-btn{
+    width:100%;
+    padding:10px;
+    background:var(--ink);
+    color:var(--bg);
+    border:none;
+    border-radius:4px;
+    font-size:14px;
+    cursor:pointer;
+    margin-top:4px;
+  }
+  .add-btn:hover{ background:#3a4a37; }
+
+  /* Transaction list */
+  .tx-row{
+    display:grid;
+    grid-template-columns: 92px 1fr auto 28px;
+    gap:10px;
+    align-items:center;
+    padding:9px 0;
+    border-bottom:1px solid var(--border);
+    font-size:14px;
+  }
+  .tx-row:last-child{ border-bottom:none; }
+  .tx-date-cat{ display:flex; flex-direction:column; gap:4px; }
+  .tx-date{ color:var(--ink-soft); font-size:12px; }
+  .tx-cat{
+    display:inline-block;
+    width:fit-content;
+    font-size:11px;
+    color:var(--ink-soft);
+    border:1px solid var(--border);
+    border-radius:10px;
+    padding:1px 8px;
+  }
+  .tx-amount{ font-variant-numeric:tabular-nums; font-weight:600; text-align:right; }
+  .tx-amount.income{ color:var(--income); }
+  .tx-amount.expense{ color:var(--expense); }
+  .tx-del{
+    background:none;
+    border:none;
+    color:var(--ink-soft);
+    cursor:pointer;
+    font-size:16px;
+  }
+  .tx-del:hover{ color:var(--expense); }
+
+  /* Pie chart */
+  .pie-wrap{
+    display:flex;
+    align-items:center;
+    gap:28px;
+    flex-wrap:wrap;
+    padding:6px 0 4px;
+  }
+  .pie-wrap svg{ flex-shrink:0; }
+  .pie-legend{ flex:1; min-width:180px; }
+  .legend-row{
+    display:flex;
+    align-items:center;
+    gap:8px;
+    font-size:13px;
+    padding:5px 0;
+    border-bottom:1px solid var(--border);
+  }
+  .legend-row:last-child{ border-bottom:none; }
+  .swatch{ width:10px; height:10px; border-radius:2px; flex-shrink:0; }
+  .legend-label{ flex:1; }
+  .legend-val{ color:var(--ink-soft); font-variant-numeric:tabular-nums; }
+
+  .empty{
+    text-align:center;
+    color:var(--ink-soft);
+    padding:30px 10px;
+    font-size:14px;
+  }
+  .save-note{
+    text-align:center;
+    font-size:12px;
+    color:var(--ink-soft);
+    margin-top:18px;
+  }
+  .backup-bar{
+    display:flex;
+    justify-content:center;
+    gap:12px;
+    margin-top:22px;
+    flex-wrap:wrap;
+  }
+  .backup-btn{
+    font-size:12px;
+    padding:7px 16px;
+    border:1px solid var(--border);
+    border-radius:20px;
+    background:var(--surface);
+    color:var(--ink-soft);
+    cursor:pointer;
+    text-decoration:none;
+    display:inline-block;
+  }
+  .backup-btn:hover{ border-color:var(--income); color:var(--income); }
+
+  /* Login */
+  .login-box{
+    max-width:380px;
+    margin:60px auto;
+    background:var(--surface);
+    border:1px solid var(--border);
+    border-radius:8px;
+    padding:28px;
+    text-align:center;
+  }
+  .login-box h1{
+    font-family:Georgia, serif;
+    font-weight:normal;
+    font-size:26px;
+    margin:0 0 6px;
+  }
+  .login-box p{ font-size:13px; color:var(--ink-soft); margin:0 0 20px; }
+  .login-box input{
+    width:100%;
+    padding:10px;
+    border:1px solid var(--border);
+    border-radius:4px;
+    font-size:14px;
+    font-family:inherit;
+    margin-bottom:12px;
+  }
+  .status-msg{ font-size:12px; color:var(--income); margin-top:12px; }
+  .logout-btn{
+    background:none;
+    border:none;
+    color:var(--ink-soft);
+    font-size:12px;
+    cursor:pointer;
+    text-decoration:underline;
+  }
+  .sync-badge{ font-size:11px; color:var(--ink-soft); }
+</style>
+</head>
+<body>
+<div id="app"></div>
+
+<script>
+/* ============================================================
+   CONFIGURAÇÃO — preencha com os dados do SEU projeto Supabase
+   (Supabase > Project Settings > API)
+   ============================================================ */
+const SUPABASE_URL  = 'COLE_AQUI_SUA_PROJECT_URL';
+const SUPABASE_ANON = 'COLE_AQUI_SUA_ANON_PUBLIC_KEY';
+/* ============================================================ */
+
+const sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON);
+
+const STORAGE_KEY = 'transactions';
+const CATS = {
+  entrada: ['Salário','Resgate','Outras entradas'],
+  saida: ['Alimentação','Saúde','Lazer','Educação','Outros gastos','Luz','Água','Internet','Celular','Cartão de crédito','Farmácia','Pets','Aplicação','IPTU','CRC']
+};
+
+let state = {
+  txs: [],
+  session: null,
+  email: '',
+  statusMsg: '',
+  syncing: false,
+  monthOffset: 0,
+  tab: 'lista',
+  form: { type:'saida', date: todayStr(), desc:'', category: CATS.saida[0], amount:'' },
+  loaded: false
+};
+
+const PIE_COLORS = ['#D6487A','#8B3A5E','#C2698D','#7A4C7E','#E27BA0','#A2456B','#B85C82','#6E3350','#D98CAE','#9C5470'];
+
+function polarToCartesian(cx, cy, r, angleDeg){
+  const rad = (angleDeg - 90) * Math.PI / 180;
+  return { x: cx + r * Math.cos(rad), y: cy + r * Math.sin(rad) };
+}
+
+function pieSlicePath(cx, cy, r, startAngle, endAngle){
+  const start = polarToCartesian(cx, cy, r, startAngle);
+  const end = polarToCartesian(cx, cy, r, endAngle);
+  const largeArc = (endAngle - startAngle) > 180 ? 1 : 0;
+  return `M ${cx} ${cy} L ${start.x.toFixed(2)} ${start.y.toFixed(2)} A ${r} ${r} 0 ${largeArc} 1 ${end.x.toFixed(2)} ${end.y.toFixed(2)} Z`;
+}
+
+function todayStr(){
+  const d = new Date();
+  return d.toISOString().slice(0,10);
+}
+
+function selectedMonth(){
+  const d = new Date();
+  d.setDate(1);
+  d.setMonth(d.getMonth() + state.monthOffset);
+  return { year: d.getFullYear(), month: d.getMonth() };
+}
+
+function monthLabel(){
+  const { year, month } = selectedMonth();
+  const d = new Date(year, month, 1);
+  return d.toLocaleDateString('pt-BR', { month:'long', year:'numeric' });
+}
+
+function fmt(v){
+  return v.toLocaleString('pt-BR', { style:'currency', currency:'BRL' });
+}
+
+function txsForMonth(){
+  const { year, month } = selectedMonth();
+  return state.txs.filter(t => {
+    const d = new Date(t.date + 'T00:00:00');
+    return d.getFullYear() === year && d.getMonth() === month;
+  });
+}
+
+/* ---------- Autenticação (link mágico por e-mail) ---------- */
+async function sendMagicLink(){
+  const email = state.email.trim();
+  if (!email) return;
+  state.statusMsg = 'Enviando...';
+  render();
+  const { error } = await sb.auth.signInWithOtp({
+    email,
+    options: { emailRedirectTo: window.location.href }
+  });
+  state.statusMsg = error
+    ? 'Erro: ' + error.message
+    : 'Pronto! Confira seu e-mail e clique no link para entrar.';
+  render();
+}
+
+async function logout(){
+  await sb.auth.signOut();
+  state.session = null;
+  state.txs = [];
+  render();
+}
+
+/* ---------- Dados ---------- */
+function cacheLocal(){
+  try{ localStorage.setItem(STORAGE_KEY, JSON.stringify(state.txs)); }catch(e){}
+}
+
+async function loadData(){
+  const { data:{ session } } = await sb.auth.getSession();
+  state.session = session;
+  state.loaded = true;
+
+  if (!session){ render(); return; }
+
+  // mostra o cache local na hora, enquanto busca do servidor
+  try{
+    const raw = localStorage.getItem(STORAGE_KEY);
+    if (raw) state.txs = JSON.parse(raw);
+  }catch(e){}
+  render();
+
+  const { data, error } = await sb
+    .from('transactions')
+    .select('*')
+    .order('date', { ascending:false });
+
+  if (error){
+    state.statusMsg = 'Offline — mostrando última cópia salva neste aparelho.';
+  }else{
+    state.txs = data.map(r => ({
+      id: r.id,
+      date: r.date,
+      desc: r.description,
+      category: r.category,
+      type: r.type,
+      amount: Number(r.amount)
+    }));
+    state.statusMsg = '';
+    cacheLocal();
+  }
+  render();
+}
+
+async function addTransaction(){
+  const amt = parseFloat(state.form.amount.replace(',', '.'));
+  if (!amt || amt <= 0 || !state.form.date) return;
+
+  const novo = {
+    date: state.form.date,
+    description: state.form.desc.trim() || (state.form.type === 'entrada' ? 'Entrada' : 'Saída'),
+    category: state.form.category,
+    type: state.form.type,
+    amount: amt
+  };
+
+  state.form.desc = '';
+  state.form.amount = '';
+  state.syncing = true;
+  render();
+
+  const { data, error } = await sb.from('transactions').insert(novo).select().single();
+  state.syncing = false;
+
+  if (error){
+    alert('Não foi possível salvar: ' + error.message);
+  }else{
+    state.txs.push({
+      id: data.id, date: data.date, desc: data.description,
+      category: data.category, type: data.type, amount: Number(data.amount)
+    });
+    cacheLocal();
+  }
+  render();
+}
+
+async function deleteTransaction(id){
+  const anterior = state.txs;
+  state.txs = state.txs.filter(t => t.id !== id);
+  render();
+
+  const { error } = await sb.from('transactions').delete().eq('id', id);
+  if (error){
+    alert('Não foi possível excluir: ' + error.message);
+    state.txs = anterior;
+  }else{
+    cacheLocal();
+  }
+  render();
+}
+
+function setType(type){
+  state.form.type = type;
+  state.form.category = CATS[type][0];
+  render();
+}
+
+function changeMonth(delta){
+  state.monthOffset += delta;
+  render();
+}
+
+function setTab(tab){
+  state.tab = tab;
+  render();
+}
+
+function exportBackup(){
+  const dataStr = JSON.stringify(state.txs, null, 2);
+  const blob = new Blob([dataStr], { type:'application/json' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `backup-fluxo-caixa-${todayStr()}.json`;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+}
+
+function importBackup(file){
+  const reader = new FileReader();
+  reader.onload = async (e)=>{
+    try{
+      const parsed = JSON.parse(e.target.result);
+      if (!Array.isArray(parsed)) throw new Error('formato inválido');
+      const ok = confirm(`Importar ${parsed.length} lançamento(s)? Eles serão adicionados à sua conta.`);
+      if (!ok) return;
+      const linhas = parsed.map(t => ({
+        date: t.date,
+        description: t.desc || t.description || '',
+        category: t.category,
+        type: t.type,
+        amount: t.amount
+      }));
+      const { error } = await sb.from('transactions').insert(linhas);
+      if (error){ alert('Erro ao importar: ' + error.message); return; }
+      await loadData();
+      alert('Backup importado com sucesso!');
+    }catch(err){
+      alert('Não foi possível ler esse arquivo. Verifique se é um backup (.json) gerado por este sistema.');
+    }
+  };
+  reader.readAsText(file);
+}
+
+function render(){
+  const app = document.getElementById('app');
+  if (!state.loaded){
+    app.innerHTML = '<div class="empty">Carregando...</div>';
+    return;
+  }
+
+  if (!state.session){
+    app.innerHTML = `
+      <div class="login-box">
+        <h1>Meu fluxo de caixa</h1>
+        <p>Digite seu e-mail para entrar. Você recebe um link e não precisa de senha.</p>
+        <input type="email" id="loginEmail" placeholder="seu@email.com" value="${state.email}">
+        <button class="add-btn" id="loginBtn">Receber link de acesso</button>
+        ${state.statusMsg ? `<div class="status-msg">${state.statusMsg}</div>` : ''}
+      </div>
+    `;
+    document.getElementById('loginEmail').oninput = e => state.email = e.target.value;
+    document.getElementById('loginEmail').onkeydown = e => { if (e.key==='Enter') sendMagicLink(); };
+    document.getElementById('loginBtn').onclick = sendMagicLink;
+    return;
+  }
+
+  const monthTxs = txsForMonth();
+  const income = monthTxs.filter(t=>t.type==='entrada').reduce((s,t)=>s+t.amount,0);
+  const expense = monthTxs.filter(t=>t.type==='saida').reduce((s,t)=>s+t.amount,0);
+  const balance = income - expense;
+
+  // investimento: agora vem das categorias Aplicação (saída) e Resgate (entrada)
+  const invMonthAplic = monthTxs.filter(t=>t.type==='saida' && t.category==='Aplicação').reduce((s,t)=>s+t.amount,0);
+  const invMonthResgate = monthTxs.filter(t=>t.type==='entrada' && t.category==='Resgate').reduce((s,t)=>s+t.amount,0);
+  const invTotalAplic = state.txs.filter(t=>t.type==='saida' && t.category==='Aplicação').reduce((s,t)=>s+t.amount,0);
+  const invTotalResgate = state.txs.filter(t=>t.type==='entrada' && t.category==='Resgate').reduce((s,t)=>s+t.amount,0);
+  const invBalance = invTotalAplic - invTotalResgate;
+
+  // category breakdown (expenses)
+  const catTotals = {};
+  monthTxs.filter(t=>t.type==='saida').forEach(t=>{
+    catTotals[t.category] = (catTotals[t.category]||0) + t.amount;
+  });
+  const catList = Object.entries(catTotals).sort((a,b)=>b[1]-a[1]);
+  const maxCat = catList.length ? catList[0][1] : 1;
+  const catTotal = catList.reduce((s,[,v])=>s+v,0);
+
+  let pieAngle = 0;
+  const pieSlices = catList.map(([cat,val],i)=>{
+    const pct = catTotal ? (val/catTotal*100) : 0;
+    const sliceAngle = catTotal ? (val/catTotal*360) : 0;
+    const path = pieSlicePath(100,100,90,pieAngle, pieAngle+sliceAngle);
+    pieAngle += sliceAngle;
+    return { cat, val, pct, path, color: PIE_COLORS[i % PIE_COLORS.length] };
+  });
+
+  const sortedTxs = [...monthTxs].sort((a,b)=> b.date.localeCompare(a.date));
+
+  app.innerHTML = `
+    <div class="masthead">
+      <h1>Meu fluxo de caixa</h1>
+      <div class="month-nav">
+        <button id="prevMonth">‹</button>
+        <span class="month-label">${monthLabel()}</span>
+        <button id="nextMonth">›</button>
+      </div>
+    </div>
+
+    <div class="summary">
+      <div class="stat income">
+        <div class="label">Entradas</div>
+        <div class="value">${fmt(income)}</div>
+      </div>
+      <div class="stat expense">
+        <div class="label">Saídas</div>
+        <div class="value">${fmt(expense)}</div>
+      </div>
+      <div class="stat balance">
+        <div class="label">Saldo do mês</div>
+        <div class="value" style="color:${balance>=0?'var(--income)':'var(--expense)'}">${fmt(balance)}</div>
+      </div>
+      <div class="stat invest">
+        <div class="label">Saldo Investimentos</div>
+        <div class="value">${fmt(invBalance)}</div>
+        <div class="sub">Mês: +${fmt(invMonthAplic)} · -${fmt(invMonthResgate)}</div>
+      </div>
+    </div>
+
+    <div class="layout">
+      <div class="panel">
+        <h2>Novo lançamento</h2>
+        <div class="toggle">
+          <button class="type-income ${state.form.type==='entrada'?'active':''}" id="typeIncome">Entrada</button>
+          <button class="type-expense ${state.form.type==='saida'?'active':''}" id="typeExpense">Saída</button>
+        </div>
+        <div class="field">
+          <label>Data</label>
+          <input type="date" id="fDate" value="${state.form.date}">
+        </div>
+        <div class="field">
+          <label>Descrição</label>
+          <input type="text" id="fDesc" placeholder="Ex: Mercado, Aluguel..." value="${state.form.desc}">
+        </div>
+        <div class="field">
+          <label>Categoria</label>
+          <select id="fCategory">
+            ${CATS[state.form.type].map(c=>`<option ${c===state.form.category?'selected':''}>${c}</option>`).join('')}
+          </select>
+        </div>
+        <div class="field">
+          <label>Valor (R$)</label>
+          <input type="text" id="fAmount" placeholder="0,00" value="${state.form.amount}">
+        </div>
+        <button class="add-btn" id="addBtn">Adicionar lançamento</button>
+      </div>
+
+      <div class="panel">
+        <div class="tabs">
+          <button class="tab-btn ${state.tab==='lista'?'active':''}" id="tabLista">Lançamentos</button>
+          <button class="tab-btn ${state.tab==='grafico'?'active':''}" id="tabGrafico">Gráfico</button>
+        </div>
+
+        ${state.tab==='lista' ? `
+          ${sortedTxs.length ? sortedTxs.map(t=>`
+            <div class="tx-row">
+              <div class="tx-date">${t.date.slice(8,10)}/${t.date.slice(5,7)}</div>
+              <div class="tx-info">
+                <span class="tx-cat">${t.category}</span>
+                <div class="tx-desc">${t.desc}</div>
+              </div>
+              <div class="tx-amount ${t.type==='entrada'?'income':'expense'}">${t.type==='entrada'?'+':'-'} ${fmt(t.amount)}</div>
+              <button class="tx-del" data-id="${t.id}" title="Excluir">✕</button>
+            </div>
+          `).join('') : '<div class="empty">Nenhum lançamento neste mês ainda.<br>Adicione o primeiro ao lado.</div>'}
+        ` : `
+          ${pieSlices.length ? `
+            <div class="pie-wrap">
+              <svg viewBox="0 0 200 200" width="200" height="200">
+                ${pieSlices.length===1
+                  ? `<circle cx="100" cy="100" r="90" fill="${pieSlices[0].color}"><title>${pieSlices[0].cat}</title></circle>`
+                  : pieSlices.map(s=>`<path d="${s.path}" fill="${s.color}"><title>${s.cat}: ${fmt(s.val)}</title></path>`).join('')}
+              </svg>
+              <div class="pie-legend">
+                ${pieSlices.map(s=>`
+                  <div class="legend-row">
+                    <span class="swatch" style="background:${s.color}"></span>
+                    <span class="legend-label">${s.cat}</span>
+                    <span class="legend-val">${fmt(s.val)} · ${s.pct.toFixed(0)}%</span>
+                  </div>
+                `).join('')}
+              </div>
+            </div>
+          ` : '<div class="empty">Nenhum gasto registrado neste mês ainda.<br>O gráfico aparece assim que você lançar uma saída.</div>'}
+        `}
+      </div>
+    </div>
+
+    <div class="backup-bar">
+      <button class="backup-btn" id="exportBtn">⬇ Baixar backup (.json)</button>
+      <label class="backup-btn" for="importInput">⬆ Importar backup</label>
+      <input type="file" id="importInput" accept=".json" style="display:none">
+    </div>
+    <div class="save-note">
+      ${state.syncing ? 'Salvando...' : (state.statusMsg || 'Salvo na sua conta — acessível de qualquer aparelho.')}
+      <br><span class="sync-badge">${state.session.user.email}</span> ·
+      <button class="logout-btn" id="logoutBtn">sair</button>
+    </div>
+  `;
+
+  document.getElementById('prevMonth').onclick = ()=>changeMonth(-1);
+  document.getElementById('nextMonth').onclick = ()=>changeMonth(1);
+  document.getElementById('typeIncome').onclick = ()=>setType('entrada');
+  document.getElementById('typeExpense').onclick = ()=>setType('saida');
+  document.getElementById('addBtn').onclick = addTransaction;
+  document.getElementById('tabLista').onclick = ()=>setTab('lista');
+  document.getElementById('tabGrafico').onclick = ()=>setTab('grafico');
+  document.getElementById('logoutBtn').onclick = logout;
+  document.getElementById('exportBtn').onclick = exportBackup;
+  document.getElementById('importInput').onchange = (e)=>{
+    const file = e.target.files[0];
+    if (file) importBackup(file);
+    e.target.value = '';
+  };
+
+  document.getElementById('fDate').oninput = e=> state.form.date = e.target.value;
+  document.getElementById('fDesc').oninput = e=> state.form.desc = e.target.value;
+  document.getElementById('fCategory').oninput = e=> state.form.category = e.target.value;
+  document.getElementById('fAmount').oninput = e=> state.form.amount = e.target.value;
+
+  document.querySelectorAll('.tx-del').forEach(btn=>{
+    btn.onclick = ()=> deleteTransaction(btn.dataset.id);
+  });
+}
+
+sb.auth.onAuthStateChange((_evt, session)=>{
+  const mudou = (state.session && state.session.user.id) !== (session && session.user.id);
+  state.session = session;
+  if (mudou) loadData(); else render();
+});
+
+loadData();
+</script>
+</body>
+</html>
