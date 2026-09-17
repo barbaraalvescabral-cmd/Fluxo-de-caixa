@@ -46,7 +46,7 @@
   .month-nav{ display:flex; align-items:center; gap:10px; font-family:Georgia, serif; font-size:17px; }
   .month-nav button{
     background:none; border:1px solid var(--ink); color:var(--ink);
-    width:28px; height:28px; border-radius:50%; cursor:pointer; font-size:14px; line-height:1;
+    width:34px; height:34px; border-radius:50%; cursor:pointer; font-size:16px; line-height:1;
   }
   .month-nav button:hover{ background:var(--ink); color:var(--bg); }
   .month-label{ min-width:150px; text-align:center; text-transform:capitalize; }
@@ -86,8 +86,8 @@
   .field{ margin-bottom:12px; }
   .field label{ display:block; font-size:12px; color:var(--ink-soft); margin-bottom:4px; }
   .field input, .field select{
-    width:100%; padding:8px 9px; border:1px solid var(--border); border-radius:4px;
-    font-size:14px; font-family:inherit; color:var(--ink); background:#fff;
+    width:100%; padding:10px 9px; border:1px solid var(--border); border-radius:4px;
+    font-size:16px; font-family:inherit; color:var(--ink); background:#fff;
   }
   .toggle{ display:flex; border:1px solid var(--border); border-radius:4px; overflow:hidden; margin-bottom:14px; }
   .toggle button{ flex:1; padding:8px; border:none; background:#fff; cursor:pointer; font-size:13px; color:var(--ink-soft); }
@@ -150,13 +150,27 @@
     max-width:380px; margin:60px auto; background:var(--surface);
     border:1px solid var(--border); border-radius:8px; padding:28px; text-align:center;
   }
+  @media (max-width:480px){
+    .login-box{ margin:24px auto; padding:22px 18px; }
+  }
   .login-box h1{ font-family:Georgia, serif; font-weight:normal; font-size:26px; margin:0 0 6px; }
   .login-box p{ font-size:13px; color:var(--ink-soft); margin:0 0 20px; }
   .login-box input{
-    width:100%; padding:10px; border:1px solid var(--border); border-radius:4px;
-    font-size:14px; font-family:inherit; margin-bottom:12px;
+    width:100%; padding:12px; border:1px solid var(--border); border-radius:4px;
+    font-size:16px; font-family:inherit; margin-bottom:12px;
+  }
+  .login-switch{ font-size:13px; color:var(--ink-soft); margin-top:16px; }
+  .login-switch button{
+    background:none; border:none; color:var(--income); cursor:pointer;
+    font-size:13px; text-decoration:underline; padding:0;
+  }
+  .login-forgot{ text-align:right; margin:-6px 0 12px; }
+  .login-forgot button{
+    background:none; border:none; color:var(--ink-soft); cursor:pointer;
+    font-size:12px; text-decoration:underline; padding:0;
   }
   .status-msg{ font-size:12px; color:var(--income); margin-top:12px; }
+  .status-msg.erro{ color:var(--expense); }
 
   /* Erro visível */
   .fatal{
@@ -193,7 +207,10 @@ const CACHE_KEY = 'fluxo-caixa-cache';
 
 let sb = null;
 let state = {
-  txs: [], session: null, email: '', statusMsg: '',
+  txs: [], session: null,
+  authMode: 'login',           // 'login' | 'signup' | 'recovery'
+  email: '', password: '', password2: '',
+  statusMsg: '', statusErro: false,
   busy: false, loaded: false, monthOffset: 0, tab: 'lista',
   form: { type:'saida', date: hoje(), desc:'', category: CATS.saida[0], amount:'' }
 };
@@ -247,23 +264,75 @@ function fatia(cx, cy, r, ini, fim){
   return `M ${cx} ${cy} L ${a.x.toFixed(2)} ${a.y.toFixed(2)} A ${r} ${r} 0 ${grande} 1 ${b.x.toFixed(2)} ${b.y.toFixed(2)} Z`;
 }
 
-/* ---------- Autenticação ---------- */
-async function enviarLink(){
-  const email = state.email.trim();
-  if (!email){ state.statusMsg = 'Digite seu e-mail.'; render(); return; }
-  state.busy = true; state.statusMsg = 'Enviando...'; render();
-  const { error } = await sb.auth.signInWithOtp({
-    email,
-    options: { emailRedirectTo: window.location.href.split('#')[0] }
-  });
+/* ---------- Autenticação (e-mail + senha) ---------- */
+function mensagemErro(err){
+  const m = err.message || '';
+  if (m.includes('Invalid login credentials')) return 'E-mail ou senha incorretos.';
+  if (m.includes('User already registered')) return 'Já existe uma conta com esse e-mail. Tente entrar.';
+  if (m.includes('Password should be at least')) return 'A senha precisa ter pelo menos 6 caracteres.';
+  if (m.includes('rate limit') || m.includes('Rate limit')) return 'Muitas tentativas seguidas. Aguarde alguns minutos e tente de novo.';
+  return m;
+}
+
+async function entrar(){
+  const email = state.email.trim(), senha = state.password;
+  if (!email || !senha){ state.statusMsg='Preencha e-mail e senha.'; state.statusErro=true; render(); return; }
+  state.busy = true; state.statusMsg=''; render();
+  const { error } = await sb.auth.signInWithPassword({ email, password: senha });
   state.busy = false;
-  state.statusMsg = error ? 'Erro: ' + error.message
-                          : 'Pronto! Abra seu e-mail e clique no link para entrar.';
+  if (error){ state.statusMsg = mensagemErro(error); state.statusErro = true; render(); }
+  // sucesso: onAuthStateChange cuida de carregar os dados
+}
+
+async function criarConta(){
+  const email = state.email.trim(), senha = state.password;
+  if (!email || !senha){ state.statusMsg='Preencha e-mail e senha.'; state.statusErro=true; render(); return; }
+  if (senha.length < 6){ state.statusMsg='A senha precisa ter pelo menos 6 caracteres.'; state.statusErro=true; render(); return; }
+  if (senha !== state.password2){ state.statusMsg='As senhas não coincidem.'; state.statusErro=true; render(); return; }
+  state.busy = true; state.statusMsg=''; render();
+  const { data, error } = await sb.auth.signUp({ email, password: senha });
+  state.busy = false;
+  if (error){
+    state.statusMsg = mensagemErro(error); state.statusErro = true;
+  }else if (!data.session){
+    state.statusMsg = 'Conta criada! Verifique seu e-mail para confirmar antes de entrar.';
+    state.statusErro = false;
+    state.authMode = 'login';
+  }
+  // se já vier com sessão (confirmação de e-mail desativada), onAuthStateChange loga direto
   render();
 }
+
+async function esqueciSenha(){
+  const email = state.email.trim();
+  if (!email){ state.statusMsg='Digite seu e-mail acima primeiro.'; state.statusErro=true; render(); return; }
+  state.busy = true; render();
+  const { error } = await sb.auth.resetPasswordForEmail(email, {
+    redirectTo: window.location.href.split('#')[0]
+  });
+  state.busy = false;
+  state.statusMsg = error ? mensagemErro(error) : 'Enviamos um link para redefinir sua senha.';
+  state.statusErro = !!error;
+  render();
+}
+
+async function definirNovaSenha(){
+  const senha = state.password;
+  if (senha.length < 6){ state.statusMsg='A senha precisa ter pelo menos 6 caracteres.'; state.statusErro=true; render(); return; }
+  if (senha !== state.password2){ state.statusMsg='As senhas não coincidem.'; state.statusErro=true; render(); return; }
+  state.busy = true; render();
+  const { error } = await sb.auth.updateUser({ password: senha });
+  state.busy = false;
+  if (error){ state.statusMsg = mensagemErro(error); state.statusErro = true; render(); return; }
+  state.authMode = 'login';
+  state.password = ''; state.password2 = '';
+  history.replaceState(null, '', window.location.pathname);
+  await carregar();
+}
+
 async function sair(){
   await sb.auth.signOut();
-  state.session = null; state.txs = []; state.statusMsg = '';
+  state.session = null; state.txs = []; state.statusMsg = ''; state.password = '';
   try{ localStorage.removeItem(CACHE_KEY); }catch(e){}
   render();
 }
@@ -390,21 +459,62 @@ function render(){
     return;
   }
 
-  if (!state.session){
+  if (!state.session || state.authMode === 'recovery'){
+    if (state.authMode === 'recovery'){
+      app.innerHTML = `
+        <div class="login-box">
+          <h1>Nova senha</h1>
+          <p>Digite a nova senha para sua conta.</p>
+          <input type="password" id="pNova" placeholder="Nova senha" autocomplete="new-password" value="${esc(state.password)}">
+          <input type="password" id="pNova2" placeholder="Confirme a nova senha" autocomplete="new-password" value="${esc(state.password2)}">
+          <button class="add-btn" id="btnSalvarSenha" ${state.busy?'disabled':''}>
+            ${state.busy ? 'Salvando...' : 'Salvar nova senha'}
+          </button>
+          ${state.statusMsg ? `<div class="status-msg${state.statusErro?' erro':''}">${esc(state.statusMsg)}</div>` : ''}
+        </div>`;
+      document.getElementById('pNova').oninput  = e => state.password = e.target.value;
+      document.getElementById('pNova2').oninput = e => state.password2 = e.target.value;
+      document.getElementById('btnSalvarSenha').onclick = definirNovaSenha;
+      return;
+    }
+
+    const cadastro = state.authMode === 'signup';
     app.innerHTML = `
       <div class="login-box">
         <h1>Meu fluxo de caixa</h1>
-        <p>Digite seu e-mail. Você recebe um link de acesso e entra sem senha.</p>
-        <input type="email" id="loginEmail" placeholder="seu@email.com" value="${esc(state.email)}">
-        <button class="add-btn" id="loginBtn" ${state.busy?'disabled':''}>
-          ${state.busy ? 'Enviando...' : 'Receber link de acesso'}
+        <p>${cadastro ? 'Crie sua conta com e-mail e senha.' : 'Entre com seu e-mail e senha.'}</p>
+        <input type="email" id="inEmail" placeholder="seu@email.com" autocomplete="email" value="${esc(state.email)}">
+        <input type="password" id="inSenha" placeholder="Senha" autocomplete="${cadastro?'new-password':'current-password'}" value="${esc(state.password)}">
+        ${cadastro ? `<input type="password" id="inSenha2" placeholder="Confirme a senha" autocomplete="new-password" value="${esc(state.password2)}">` : ''}
+        ${!cadastro ? `<div class="login-forgot"><button id="btnEsqueci">Esqueci minha senha</button></div>` : ''}
+        <button class="add-btn" id="btnAuth" ${state.busy?'disabled':''}>
+          ${state.busy ? 'Aguarde...' : (cadastro ? 'Criar conta' : 'Entrar')}
         </button>
-        ${state.statusMsg ? `<div class="status-msg">${esc(state.statusMsg)}</div>` : ''}
+        ${state.statusMsg ? `<div class="status-msg${state.statusErro?' erro':''}">${esc(state.statusMsg)}</div>` : ''}
+        <div class="login-switch">
+          ${cadastro
+            ? `Já tem conta? <button id="btnTrocarModo">Entrar</button>`
+            : `Ainda não tem conta? <button id="btnTrocarModo">Criar conta</button>`}
+        </div>
       </div>`;
-    const inp = document.getElementById('loginEmail');
-    inp.oninput = e => state.email = e.target.value;
-    inp.onkeydown = e => { if (e.key === 'Enter') enviarLink(); };
-    document.getElementById('loginBtn').onclick = enviarLink;
+
+    const inEmail = document.getElementById('inEmail');
+    const inSenha = document.getElementById('inSenha');
+    inEmail.oninput = e => state.email = e.target.value;
+    inSenha.oninput = e => state.password = e.target.value;
+    const acao = cadastro ? criarConta : entrar;
+    inSenha.onkeydown = e => { if (e.key === 'Enter') acao(); };
+    if (cadastro){
+      document.getElementById('inSenha2').oninput = e => state.password2 = e.target.value;
+    }else{
+      document.getElementById('btnEsqueci').onclick = esqueciSenha;
+    }
+    document.getElementById('btnAuth').onclick = acao;
+    document.getElementById('btnTrocarModo').onclick = () => {
+      state.authMode = cadastro ? 'login' : 'signup';
+      state.statusMsg = ''; state.password2 = '';
+      render();
+    };
     return;
   }
 
@@ -562,6 +672,9 @@ function render(){
 
 /* ---------- Inicialização ---------- */
 (function iniciar(){
+  if (window.location.hash.includes('type=recovery')){
+    state.authMode = 'recovery';
+  }
   if (!window.supabase || !window.supabase.createClient){
     telaDeErro('A biblioteca do Supabase não carregou.',
       'Verifique sua conexão com a internet e recarregue a página.');
