@@ -195,9 +195,10 @@ const SUPABASE_KEY = 'sb_publishable_g9TUPVNhsbjhPDDHWku1bQ_qI2vTqqH';
 /* ========================================================== */
 
 const CATS = {
-  entrada: ['Salário','Resgate','Outras entradas'],
+  entrada: ['Saldo inicial (conta)','Saldo inicial (investimento)','Salário','Resgate','Outras entradas'],
   saida: ['Alimentação','Saúde','Lazer','Educação','Outros gastos','Luz','Água',
-          'Internet','Celular','Cartão de crédito','Farmácia','Pets','Aplicação','IPTU','CRC']
+          'Internet','Celular','Cartão de crédito','Farmácia','Pets','Aplicação','IPTU','CRC',
+          'Academia','Uber','Casa']
 };
 
 const PIE_COLORS = ['#D6487A','#8B3A5E','#C2698D','#7A4C7E','#E27BA0','#A2456B',
@@ -519,7 +520,7 @@ function render(){
   }
 
   const mes = txsDoMes();
-  const entradas = mes.filter(t=>t.type==='entrada').reduce((s,t)=>s+t.amount,0);
+  const entradas = mes.filter(t=>t.type==='entrada' && t.category!=='Saldo inicial (investimento)').reduce((s,t)=>s+t.amount,0);
   const saidas  = mes.filter(t=>t.type==='saida').reduce((s,t)=>s+t.amount,0);
   const saldo = entradas - saidas;
 
@@ -527,7 +528,8 @@ function render(){
   const resgateMes = mes.filter(t=>t.type==='entrada' && t.category==='Resgate').reduce((s,t)=>s+t.amount,0);
   const aplicTotal   = state.txs.filter(t=>t.type==='saida'   && t.category==='Aplicação').reduce((s,t)=>s+t.amount,0);
   const resgateTotal = state.txs.filter(t=>t.type==='entrada' && t.category==='Resgate').reduce((s,t)=>s+t.amount,0);
-  const saldoInvest = aplicTotal - resgateTotal;
+  const saldoInicialInvest = state.txs.filter(t=>t.type==='entrada' && t.category==='Saldo inicial (investimento)').reduce((s,t)=>s+t.amount,0);
+  const saldoInvest = aplicTotal - resgateTotal + saldoInicialInvest;
 
   const porCat = {};
   mes.filter(t=>t.type==='saida').forEach(t => { porCat[t.category] = (porCat[t.category]||0) + t.amount; });
@@ -539,6 +541,23 @@ function render(){
     const d = fatia(100,100,90,ang,ang+graus);
     ang += graus;
     return { cat, val, pct: totalCat ? val/totalCat*100 : 0, d, cor: PIE_COLORS[i % PIE_COLORS.length] };
+  });
+
+  // Cartão de crédito: gasto do mês + quebra por descrição
+  const txsCartao = mes.filter(t=>t.type==='saida' && t.category==='Cartão de crédito');
+  const cartaoMes = txsCartao.reduce((s,t)=>s+t.amount,0);
+  const porDesc = {};
+  txsCartao.forEach(t => {
+    const chave = t.desc && t.desc.trim() ? t.desc.trim() : 'Sem descrição';
+    porDesc[chave] = (porDesc[chave]||0) + t.amount;
+  });
+  const listaCartao = Object.entries(porDesc).sort((a,b)=>b[1]-a[1]);
+  let angC = 0;
+  const fatiasCartao = listaCartao.map(([desc,val],i)=>{
+    const graus = cartaoMes ? (val/cartaoMes*360) : 0;
+    const d = fatia(100,100,90,angC,angC+graus);
+    angC += graus;
+    return { desc, val, pct: cartaoMes ? val/cartaoMes*100 : 0, d, cor: PIE_COLORS[i % PIE_COLORS.length] };
   });
 
   const ordenadas = [...mes].sort((a,b)=> b.date.localeCompare(a.date));
@@ -564,6 +583,10 @@ function render(){
         <div class="label">Saldo Investimentos</div>
         <div class="value">${fmt(saldoInvest)}</div>
         <div class="sub">Mês: aplicado ${fmt(aplicMes)} · resgatado ${fmt(resgateMes)}</div>
+      </div>
+      <div class="stat expense">
+        <div class="label">Cartão de crédito (mês)</div>
+        <div class="value">${fmt(cartaoMes)}</div>
       </div>
     </div>
 
@@ -601,6 +624,7 @@ function render(){
         <div class="tabs">
           <button class="tab-btn ${state.tab==='lista'?'active':''}" id="abaLista">Lançamentos</button>
           <button class="tab-btn ${state.tab==='grafico'?'active':''}" id="abaGrafico">Gráfico</button>
+          <button class="tab-btn ${state.tab==='cartao'?'active':''}" id="abaCartao">Cartão</button>
         </div>
         ${state.tab==='lista' ? (
           ordenadas.length ? ordenadas.map(t=>`
@@ -616,7 +640,7 @@ function render(){
               <button class="tx-del" data-id="${t.id}" title="Excluir">✕</button>
             </div>`).join('')
           : '<div class="empty">Nenhum lançamento neste mês ainda.</div>'
-        ) : (
+        ) : state.tab==='grafico' ? (
           fatias.length ? `
             <div class="pie-wrap">
               <svg viewBox="0 0 200 200" width="190" height="190">
@@ -634,6 +658,25 @@ function render(){
               </div>
             </div>`
           : '<div class="empty">Nenhum gasto neste mês ainda.<br>O gráfico aparece no primeiro lançamento de saída.</div>'
+        ) : (
+          fatiasCartao.length ? `
+            <div class="sub" style="margin-bottom:12px;">Total no cartão este mês: <strong>${fmt(cartaoMes)}</strong></div>
+            <div class="pie-wrap">
+              <svg viewBox="0 0 200 200" width="190" height="190">
+                ${fatiasCartao.length===1
+                  ? `<circle cx="100" cy="100" r="90" fill="${fatiasCartao[0].cor}"></circle>`
+                  : fatiasCartao.map(f=>`<path d="${f.d}" fill="${f.cor}"><title>${esc(f.desc)}: ${fmt(f.val)}</title></path>`).join('')}
+              </svg>
+              <div class="pie-legend">
+                ${fatiasCartao.map(f=>`
+                  <div class="legend-row">
+                    <span class="swatch" style="background:${f.cor}"></span>
+                    <span class="legend-label">${esc(f.desc)}</span>
+                    <span class="legend-val">${fmt(f.val)} · ${f.pct.toFixed(0)}%</span>
+                  </div>`).join('')}
+              </div>
+            </div>`
+          : '<div class="empty">Nenhum gasto no cartão de crédito neste mês ainda.<br>Lance uma saída com categoria "Cartão de crédito" — coloque uma descrição para diferenciar cada compra e ver a divisão aqui.</div>'
         )}
       </div>
     </div>
@@ -654,6 +697,7 @@ function render(){
   document.getElementById('tSaida').onclick = ()=>setTipo('saida');
   document.getElementById('abaLista').onclick = ()=>setAba('lista');
   document.getElementById('abaGrafico').onclick = ()=>setAba('grafico');
+  document.getElementById('abaCartao').onclick = ()=>setAba('cartao');
   document.getElementById('addBtn').onclick = adicionar;
   document.getElementById('btnSair').onclick = sair;
   document.getElementById('btnExportar').onclick = baixarBackup;
