@@ -103,7 +103,7 @@
 
   /* Lista */
   .tx-row{
-    display:grid; grid-template-columns:62px 1fr auto 28px; gap:10px;
+    display:grid; grid-template-columns:62px 1fr auto 26px 26px; gap:8px;
     align-items:center; padding:9px 0; border-bottom:1px solid var(--border); font-size:14px;
   }
   .tx-row:last-child{ border-bottom:none; }
@@ -117,7 +117,8 @@
   .tx-amount{ font-variant-numeric:tabular-nums; font-weight:600; text-align:right; }
   .tx-amount.income{ color:var(--income); }
   .tx-amount.expense{ color:var(--expense); }
-  .tx-del{ background:none; border:none; color:var(--ink-soft); cursor:pointer; font-size:16px; }
+  .tx-edit, .tx-del{ background:none; border:none; color:var(--ink-soft); cursor:pointer; font-size:15px; }
+  .tx-edit:hover{ color:var(--income); }
   .tx-del:hover{ color:var(--expense); }
 
   /* Gráfico */
@@ -212,7 +213,7 @@ let state = {
   authMode: 'login',           // 'login' | 'signup' | 'recovery'
   email: '', password: '', password2: '',
   statusMsg: '', statusErro: false,
-  busy: false, loaded: false, monthOffset: 0, tab: 'lista',
+  busy: false, loaded: false, monthOffset: 0, tab: 'lista', editingId: null,
   form: { type:'saida', date: hoje(), desc:'', category: CATS.saida[0], amount:'' }
 };
 
@@ -388,16 +389,55 @@ async function adicionar(){
     amount: valor
   };
   state.busy = true; render();
-  const { data, error } = await sb.from('transactions').insert(linha).select().single();
-  state.busy = false;
-  if (error){
-    alert('Não foi possível salvar: ' + error.message);
+
+  if (state.editingId){
+    const { data, error } = await sb.from('transactions')
+      .update(linha).eq('id', state.editingId).select().single();
+    state.busy = false;
+    if (error){
+      alert('Não foi possível salvar as alterações: ' + error.message);
+    }else{
+      const idx = state.txs.findIndex(t => t.id === state.editingId);
+      const atualizado = { id:data.id, date:data.date, desc:data.description,
+                            category:data.category, type:data.type, amount:Number(data.amount) };
+      if (idx > -1) state.txs[idx] = atualizado;
+      salvarCache();
+      cancelarEdicao();
+      return;
+    }
   }else{
-    state.txs.push({ id:data.id, date:data.date, desc:data.description,
-                     category:data.category, type:data.type, amount:Number(data.amount) });
-    state.form.desc = ''; state.form.amount = '';
-    salvarCache();
+    const { data, error } = await sb.from('transactions').insert(linha).select().single();
+    state.busy = false;
+    if (error){
+      alert('Não foi possível salvar: ' + error.message);
+    }else{
+      state.txs.push({ id:data.id, date:data.date, desc:data.description,
+                       category:data.category, type:data.type, amount:Number(data.amount) });
+      state.form.desc = ''; state.form.amount = '';
+      salvarCache();
+    }
   }
+  render();
+}
+
+function iniciarEdicao(id){
+  const t = state.txs.find(x => x.id === id);
+  if (!t) return;
+  state.editingId = id;
+  state.form = {
+    type: t.type,
+    date: t.date,
+    desc: t.desc,
+    category: t.category,
+    amount: String(t.amount).replace('.', ',')
+  };
+  window.scrollTo({ top:0, behavior:'smooth' });
+  render();
+}
+
+function cancelarEdicao(){
+  state.editingId = null;
+  state.form = { type:'saida', date: hoje(), desc:'', category: CATS.saida[0], amount:'' };
   render();
 }
 
@@ -592,7 +632,7 @@ function render(){
 
     <div class="layout">
       <div class="panel">
-        <h2>Novo lançamento</h2>
+        <h2>${state.editingId ? 'Editar lançamento' : 'Novo lançamento'}</h2>
         <div class="toggle">
           <button class="type-income ${state.form.type==='entrada'?'active':''}" id="tEntrada">Entrada</button>
           <button class="type-expense ${state.form.type==='saida'?'active':''}" id="tSaida">Saída</button>
@@ -616,8 +656,9 @@ function render(){
           <input type="text" inputmode="decimal" id="fValor" placeholder="0,00" value="${esc(state.form.amount)}">
         </div>
         <button class="add-btn" id="addBtn" ${state.busy?'disabled':''}>
-          ${state.busy ? 'Salvando...' : 'Adicionar lançamento'}
+          ${state.busy ? 'Salvando...' : (state.editingId ? 'Salvar alterações' : 'Adicionar lançamento')}
         </button>
+        ${state.editingId ? `<button class="backup-btn" id="btnCancelarEdicao" style="width:100%;margin-top:8px;">Cancelar edição</button>` : ''}
       </div>
 
       <div class="panel">
@@ -637,6 +678,7 @@ function render(){
               <div class="tx-amount ${t.type==='entrada'?'income':'expense'}">
                 ${t.type==='entrada'?'+':'-'} ${fmt(t.amount)}
               </div>
+              <button class="tx-edit" data-id="${t.id}" title="Editar">✎</button>
               <button class="tx-del" data-id="${t.id}" title="Excluir">✕</button>
             </div>`).join('')
           : '<div class="empty">Nenhum lançamento neste mês ainda.</div>'
@@ -699,6 +741,7 @@ function render(){
   document.getElementById('abaGrafico').onclick = ()=>setAba('grafico');
   document.getElementById('abaCartao').onclick = ()=>setAba('cartao');
   document.getElementById('addBtn').onclick = adicionar;
+  if (state.editingId) document.getElementById('btnCancelarEdicao').onclick = cancelarEdicao;
   document.getElementById('btnSair').onclick = sair;
   document.getElementById('btnExportar').onclick = baixarBackup;
   document.getElementById('inputImportar').onchange = e => {
@@ -711,6 +754,7 @@ function render(){
   const fv = document.getElementById('fValor');
   fv.oninput = e => state.form.amount = e.target.value;
   fv.onkeydown = e => { if (e.key === 'Enter') adicionar(); };
+  document.querySelectorAll('.tx-edit').forEach(b => b.onclick = ()=>iniciarEdicao(b.dataset.id));
   document.querySelectorAll('.tx-del').forEach(b => b.onclick = ()=>excluir(b.dataset.id));
 }
 
